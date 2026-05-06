@@ -82,10 +82,10 @@ class TribunalStartupErrorApp extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 12),
-                Text(
-                  error.toString(),
+                const Text(
+                  'Ocurrio un problema al cargar la aplicacion. Intenta reiniciar y, si persiste, revisa los logs de error.',
                   textAlign: TextAlign.center,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: Color(0xFF9B91C4),
                     height: 1.5,
                   ),

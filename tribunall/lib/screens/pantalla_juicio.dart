@@ -24,6 +24,7 @@ class _PantallaJuicioState extends State<PantallaJuicio>
   String _cargo = '';
   String _sentencia = '';
   bool _mostrandoSentencia = false;
+  bool _sinDatos = false;
   int _tiempoRestante = 0;
   Timer? _timer;
   final _rng = Random();
@@ -60,6 +61,9 @@ class _PantallaJuicioState extends State<PantallaJuicio>
     }
 
     if (s.acusados.isEmpty || cargosPool.isEmpty || sentenciasPool.isEmpty) {
+      setState(() {
+        _sinDatos = true;
+      });
       return;
     }
 
@@ -68,6 +72,7 @@ class _PantallaJuicioState extends State<PantallaJuicio>
     final sentencia = sentenciasPool[_rng.nextInt(sentenciasPool.length)];
 
     setState(() {
+      _sinDatos = false;
       _acusado = acusado;
       _cargo = cargo;
       _sentencia = sentencia;
@@ -248,6 +253,38 @@ class _PantallaJuicioState extends State<PantallaJuicio>
   }
 
   Widget _buildCard(AppThemeData th) {
+    if (_sinDatos) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: th.superficie,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: th.borde, width: 1.5),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              'No hay datos suficientes para generar un caso.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: th.textoPrim,
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'Vuelve y agrega acusados o revisa el banco de contenidos.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: th.textoSec, height: 1.5),
+            ),
+          ],
+        ),
+      );
+    }
+
     return ScaleTransition(
       scale: _escalaAnim,
       child: Container(
@@ -393,6 +430,27 @@ class _PantallaJuicioState extends State<PantallaJuicio>
   }
 
   Widget _buildBotones(AppState s, AppThemeData th) {
+    if (_sinDatos) {
+      return SizedBox(
+        width: double.infinity,
+        height: 52,
+        child: OutlinedButton(
+          onPressed: () {
+            _timer?.cancel();
+            Navigator.pop(context);
+          },
+          style: OutlinedButton.styleFrom(
+            foregroundColor: th.textoSec,
+            side: BorderSide(color: th.borde),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+          ),
+          child: const Text('Volver'),
+        ),
+      );
+    }
+
     if (!_mostrandoSentencia) {
       return SizedBox(
         width: double.infinity,

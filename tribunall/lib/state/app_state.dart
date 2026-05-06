@@ -75,6 +75,7 @@ class AppState extends ChangeNotifier {
   }
 
   void removerAcusado(int index) {
+    if (index < 0 || index >= _acusados.length) return;
     _acusados.removeAt(index);
     notifyListeners();
   }
@@ -205,7 +206,7 @@ class AppState extends ChangeNotifier {
   }
 
   void _cargarInterstitial() {
-    if (!anunciosActivos && !_esPremium) return;
+    if (!anunciosActivos) return;
 
     InterstitialAd.load(
       adUnitId: MonetizationConfig.interstitialAdId,
