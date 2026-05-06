@@ -1,0 +1,1 @@
+enum NivelJuego { normal, intermedio, picante }
