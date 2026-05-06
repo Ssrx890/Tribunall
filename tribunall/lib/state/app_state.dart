@@ -7,12 +7,18 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/monetization_config.dart';
 import '../models/banco.dart';
+import '../models/bancos.dart';
 import '../models/nivel_juego.dart';
 
 class AppState extends ChangeNotifier {
   final Banco banco;
+  final Bancos bancos;
+  int _bancoIndex = 0;
   final bool _enableMonetization;
   bool _esPremium;
+  bool _tutorialVisto;
+  bool _sonidoActivo;
+  bool _vibracionActiva;
   int _contadorJuicios = 0;
   int _tiempoConfigurado = 20;
   final List<String> _acusados = [];
@@ -30,9 +36,16 @@ class AppState extends ChangeNotifier {
 
   AppState({
     required this.banco,
+    required this.bancos,
     required bool esPremiumInicial,
+    bool tutorialVistoInicial = false,
+    bool sonidoActivoInicial = true,
+    bool vibracionActivaInicial = true,
     bool enableMonetization = true,
   })  : _esPremium = esPremiumInicial,
+        _tutorialVisto = tutorialVistoInicial,
+        _sonidoActivo = sonidoActivoInicial,
+        _vibracionActiva = vibracionActivaInicial,
         _enableMonetization = enableMonetization {
     if (!_enableMonetization) return;
 
@@ -47,7 +60,27 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  BancoTematico get bancoSeleccionado => bancos.bancos[_bancoIndex];
+  List<BancoTematico> get bancosDisponibles => bancos.bancos;
+  List<CartaDefensa> get cartasDefensa => bancos.cartasDefensa;
+  int get bancoIndex => _bancoIndex;
+
+  void setBanco(int index) {
+    if (index < 0 || index >= bancos.bancos.length) return;
+    _bancoIndex = index;
+    final b = bancos.bancos[index];
+    if (_nivel == NivelJuego.intermedio && !b.tieneIntermedio) {
+      _nivel = NivelJuego.normal;
+    } else if (_nivel == NivelJuego.picante && !b.tienePicante) {
+      _nivel = NivelJuego.normal;
+    }
+    notifyListeners();
+  }
+
   bool get esPremium => _esPremium;
+  bool get tutorialVisto => _tutorialVisto;
+  bool get sonidoActivo => _sonidoActivo;
+  bool get vibracionActiva => _vibracionActiva;
   bool get cargandoPago => _cargandoPago;
   bool get iapDisponible => _iapDisponible;
   int get contadorJuicios => _contadorJuicios;
@@ -60,7 +93,9 @@ class AppState extends ChangeNotifier {
       _enableMonetization && MonetizationConfig.adsEnabled && !_esPremium;
   bool get compraPicanteDisponible =>
       _enableMonetization && MonetizationConfig.hasPicanteProduct;
-  bool get puedeDesbloquearIntermedio => esPremium || anunciosActivos;
+  // In non-release builds all modes are freely accessible for testing
+  bool get puedeDesbloquearIntermedio =>
+      !MonetizationConfig.adsEnabled || esPremium || anunciosActivos;
 
   void setTiempo(int t) {
     _tiempoConfigurado = t;
@@ -87,6 +122,39 @@ class AppState extends ChangeNotifier {
 
   void incrementarContador() {
     _contadorJuicios++;
+    // No notifyListeners() — el contador no se muestra en la UI,
+    // solo se lee en _generarCaso para decidir cuándo mostrar ads.
+  }
+
+  Future<void> marcarTutorialVisto() async {
+    if (_tutorialVisto) return;
+    _tutorialVisto = true;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('tutorial_visto', true);
+  }
+
+  Future<void> resetearTutorial() async {
+    _tutorialVisto = false;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('tutorial_visto', false);
+  }
+
+  Future<void> setSonido(bool value) async {
+    _sonidoActivo = value;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('sonido_activo', value);
+  }
+
+  Future<void> setVibracion(bool value) async {
+    _vibracionActiva = value;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('vibracion_activa', value);
+  }
+
+  void limpiarJugadores() {
+    _acusados.clear();
     notifyListeners();
   }
 

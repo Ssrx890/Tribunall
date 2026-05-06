@@ -63,6 +63,7 @@ flutter:
 
   assets:
     - assets/banco.json
+    - assets/bancos.json
 
   fonts:
     - family: Cinzel

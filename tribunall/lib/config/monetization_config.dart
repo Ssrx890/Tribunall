@@ -1,9 +1,14 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
+
 class MonetizationConfig {
   static const String productPicanteId = 'modo_picante_v1';
 
-  static const bool adsEnabled = true;
+  /// Ads only run in release builds. In debug/profile (emulator, flutter run)
+  /// the AdMob WebView renderer crashes on emulators without GPU support.
+  static bool get adsEnabled => kReleaseMode && (Platform.isAndroid || Platform.isIOS);
+
   static const bool iapEnabled = false;
 
   static bool get hasPicanteProduct =>

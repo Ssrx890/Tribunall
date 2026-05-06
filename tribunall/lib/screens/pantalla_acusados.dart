@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart' show AdWidget;
 import 'package:provider/provider.dart';
 
+import '../config/monetization_config.dart';
 import '../models/nivel_juego.dart';
 import '../state/app_state.dart';
 import '../theme/app_theme_data.dart';
 import 'pantalla_juicio.dart';
+import 'pantalla_opciones.dart';
 
 class PantallaAcusados extends StatefulWidget {
   const PantallaAcusados({super.key});
@@ -44,7 +46,7 @@ class _PantallaAcusadosState extends State<PantallaAcusados> {
       return;
     }
 
-    if (s.esPremium) {
+    if (s.esPremium || !MonetizationConfig.adsEnabled) {
       s.setNivel(NivelJuego.intermedio);
       return;
     }
@@ -77,7 +79,7 @@ class _PantallaAcusadosState extends State<PantallaAcusados> {
   }
 
   Future<void> _onPicante(AppState s) async {
-    if (s.esPremium) {
+    if (s.esPremium || !MonetizationConfig.adsEnabled) {
       s.setNivel(s.esPicante ? NivelJuego.normal : NivelJuego.picante);
       return;
     }
@@ -115,34 +117,58 @@ class _PantallaAcusadosState extends State<PantallaAcusados> {
                     vertical: 24,
                   ),
                   children: [
-                    Text(
-                      '⚖️',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(fontSize: 56),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'EL TRIBUNAL',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontFamily: 'Cinzel',
-                        fontSize: 28,
-                        fontWeight: FontWeight.w900,
-                        color: th.accent,
-                        letterSpacing: 4,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Nadie es inocente aquí',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: th.textoSec,
-                        letterSpacing: 1.5,
-                      ),
+                    Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        Column(
+                          children: [
+                            Text(
+                              '⚖️',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(fontSize: 56),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'EL TRIBUNAL',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontFamily: 'Oswald',
+                                fontSize: 32,
+                                fontWeight: FontWeight.w700,
+                                color: th.accent,
+                                letterSpacing: 2,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Nadie es inocente aquí',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: th.textoSec,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                          ],
+                        ),
+                        Positioned(
+                          right: 0,
+                          top: 0,
+                          child: IconButton(
+                            onPressed: () => mostrarOpciones(context),
+                            icon: Icon(
+                              Icons.settings_outlined,
+                              color: th.textoSec,
+                              size: 22,
+                            ),
+                            tooltip: 'Opciones',
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 28),
+                    _buildBancoSelector(s, th),
+                    const SizedBox(height: 20),
                     _buildModeSelector(s, th),
                     const SizedBox(height: 24),
                     _buildTiempoSelector(s, th),
@@ -165,6 +191,82 @@ class _PantallaAcusadosState extends State<PantallaAcusados> {
     );
   }
 
+  Widget _buildBancoSelector(AppState s, AppThemeData th) {
+    return Container(
+      decoration: BoxDecoration(
+        color: th.superficie,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: th.borde),
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'TEMÁTICA',
+            style: TextStyle(
+              fontFamily: 'Oswald',
+              fontSize: 12,
+              letterSpacing: 1,
+              color: th.textoSec,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: s.bancosDisponibles.asMap().entries.map((e) {
+                final idx = e.key;
+                final banco = e.value;
+                final selected = s.bancoIndex == idx;
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: GestureDetector(
+                    onTap: () => s.setBanco(idx),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 250),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? th.accent.withValues(alpha: 0.18)
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: selected
+                              ? th.accent
+                              : th.borde,
+                          width: selected ? 2 : 1,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Text(banco.emoji,
+                              style: const TextStyle(fontSize: 18)),
+                          const SizedBox(width: 6),
+                          Text(
+                            banco.nombre,
+                            style: TextStyle(
+                              fontFamily: 'Oswald',
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: selected
+                                  ? th.accent
+                                  : th.textoSec,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildModeSelector(AppState s, AppThemeData th) {
     return Container(
       decoration: BoxDecoration(
@@ -179,9 +281,9 @@ class _PantallaAcusadosState extends State<PantallaAcusados> {
           Text(
             'MODO DE JUEGO',
             style: TextStyle(
-              fontFamily: 'Cinzel',
-              fontSize: 11,
-              letterSpacing: 2,
+              fontFamily: 'Oswald',
+              fontSize: 12,
+              letterSpacing: 1,
               color: th.textoSec,
             ),
           ),
@@ -196,26 +298,30 @@ class _PantallaAcusadosState extends State<PantallaAcusados> {
                 color: const Color(0xFFFFBD2E),
                 onTap: () => s.setNivel(NivelJuego.normal),
               ),
-              const SizedBox(width: 8),
-              _ModeButton(
-                emoji: '🌙',
-                label: 'ATREVIDO',
-                sublabel: s.esPremium ? 'PREMIUM ✓' : 'VER ANUNCIO',
-                selected: s.nivel == NivelJuego.intermedio,
-                color: const Color(0xFF8B5CF6),
-                onTap: () => _onIntermedio(s),
-              ),
-              const SizedBox(width: 8),
-              _ModeButton(
-                emoji: '🔥',
-                label: 'PICANTE',
-                sublabel: s.esPremium
-                    ? 'PREMIUM ✓'
-                    : (s.compraPicanteDisponible ? '\$1.99' : 'PROXIMAMENTE'),
-                selected: s.nivel == NivelJuego.picante,
-                color: const Color(0xFFFF2D55),
-                onTap: () => _onPicante(s),
-              ),
+              if (s.bancoSeleccionado.tieneIntermedio) ...[
+                const SizedBox(width: 8),
+                _ModeButton(
+                  emoji: '🌙',
+                  label: 'ATREVIDO',
+                  sublabel: s.esPremium ? 'PREMIUM ✓' : 'VER ANUNCIO',
+                  selected: s.nivel == NivelJuego.intermedio,
+                  color: const Color(0xFF8B5CF6),
+                  onTap: () => _onIntermedio(s),
+                ),
+              ],
+              if (s.bancoSeleccionado.tienePicante) ...[
+                const SizedBox(width: 8),
+                _ModeButton(
+                  emoji: '🔥',
+                  label: 'PICANTE',
+                  sublabel: s.esPremium
+                      ? 'PREMIUM ✓'
+                      : (s.compraPicanteDisponible ? '\$1.99' : 'PRÓXIMAMENTE'),
+                  selected: s.nivel == NivelJuego.picante,
+                  color: const Color(0xFFFF2D55),
+                  onTap: () => _onPicante(s),
+                ),
+              ],
             ],
           ),
         ],
@@ -278,7 +384,9 @@ class _PantallaAcusadosState extends State<PantallaAcusados> {
             style: TextStyle(color: th.textoPrim),
             cursorColor: th.accent,
             decoration: InputDecoration(
-              hintText: 'Nombre del acusado',
+              hintText: 'Nombre del jugador',
+              prefixIcon: Icon(Icons.person_add_outlined,
+                  color: th.textoApagado, size: 20),
               hintStyle: TextStyle(color: th.textoApagado),
               filled: true,
               fillColor: th.superficie,
@@ -344,7 +452,9 @@ class _PantallaAcusadosState extends State<PantallaAcusados> {
   }
 
   Widget _buildBotonIniciar(AppState s, AppThemeData th) {
-    final canStart = s.acusados.isNotEmpty;
+    final minJ = s.bancoSeleccionado.minJugadores;
+    final canStart = s.acusados.length >= minJ;
+    final faltantes = minJ - s.acusados.length;
     late final String label;
 
     switch (s.nivel) {
@@ -359,35 +469,50 @@ class _PantallaAcusadosState extends State<PantallaAcusados> {
         break;
     }
 
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
-      width: double.infinity,
-      height: 56,
-      child: ElevatedButton(
-        onPressed: canStart
-            ? () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const PantallaJuicio()),
-                );
-              }
-            : null,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: canStart ? th.accent : th.textoApagado,
-          foregroundColor: th.fondo,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
+    return Column(
+      children: [
+        if (!canStart && s.acusados.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Text(
+              'Añade al menos $faltantes jugador${faltantes == 1 ? '' : 'es'} más para empezar',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12, color: th.textoSec),
+            ),
           ),
-          textStyle: const TextStyle(
-            fontFamily: 'Cinzel',
-            fontSize: 14,
-            fontWeight: FontWeight.w900,
-            letterSpacing: 2,
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          width: double.infinity,
+          height: 56,
+          child: ElevatedButton(
+            onPressed: canStart
+                ? () {
+                    FocusScope.of(context).unfocus();
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const PantallaJuicio()),
+                    );
+                  }
+                : null,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: canStart ? th.accent : th.textoApagado,
+              foregroundColor: th.fondo,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              textStyle: const TextStyle(
+                fontFamily: 'Oswald',
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1.5,
+              ),
+              elevation: canStart ? 6 : 0,
+            ),
+            child: Text(label),
           ),
-          elevation: canStart ? 6 : 0,
         ),
-        child: Text(label),
-      ),
+      ],
     );
   }
 }
@@ -432,11 +557,11 @@ class _ModeButton extends StatelessWidget {
               Text(
                 label,
                 style: TextStyle(
-                  fontFamily: 'Cinzel',
-                  fontSize: 9,
-                  fontWeight: FontWeight.w900,
+                  fontFamily: 'Oswald',
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
                   color: selected ? color : color.withValues(alpha: 0.6),
-                  letterSpacing: 1,
+                  letterSpacing: 0.5,
                 ),
               ),
               const SizedBox(height: 2),
@@ -506,9 +631,10 @@ class _ModoAnuncioDialog extends StatelessWidget {
       title: const Text(
         '🌙 Modo Atrevido',
         style: TextStyle(
-          fontFamily: 'Cinzel',
+          fontFamily: 'Oswald',
+          fontSize: 20,
           color: Color(0xFF8B5CF6),
-          fontWeight: FontWeight.w900,
+          fontWeight: FontWeight.w700,
         ),
       ),
       content: const Text(
@@ -571,13 +697,13 @@ class _PremiumModal extends StatelessWidget {
               const Text('🔥', style: TextStyle(fontSize: 52)),
               const SizedBox(height: 12),
               const Text(
-                'MODO PICANTE',
+                'MODO PICANTE 🔥',
                 style: TextStyle(
-                  fontFamily: 'Cinzel',
-                  fontSize: 22,
-                  fontWeight: FontWeight.w900,
+                  fontFamily: 'Oswald',
+                  fontSize: 24,
+                  fontWeight: FontWeight.w700,
                   color: Color(0xFFFF2D55),
-                  letterSpacing: 3,
+                  letterSpacing: 1.5,
                 ),
               ),
               const SizedBox(height: 8),

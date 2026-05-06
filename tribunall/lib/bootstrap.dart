@@ -6,16 +6,25 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'app.dart';
 import 'config/monetization_config.dart';
 import 'models/banco.dart';
+import 'models/bancos.dart';
 import 'state/app_state.dart';
 
 Future<AppState> loadInitialAppState({bool enableMonetization = true}) async {
   final banco = await Banco.cargar();
+  final bancosData = await Bancos.cargar();
   final prefs = await SharedPreferences.getInstance();
   final esPremium = prefs.getBool('es_premium') ?? false;
+  final tutorialVisto = prefs.getBool('tutorial_visto') ?? false;
+  final sonidoActivo = prefs.getBool('sonido_activo') ?? true;
+  final vibracionActiva = prefs.getBool('vibracion_activo') ?? true;
 
   return AppState(
     banco: banco,
+    bancos: bancosData,
     esPremiumInicial: esPremium,
+    tutorialVistoInicial: tutorialVisto,
+    sonidoActivoInicial: sonidoActivo,
+    vibracionActivaInicial: vibracionActiva,
     enableMonetization: enableMonetization,
   );
 }

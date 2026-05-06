@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:tribunall/app.dart';
 import 'package:tribunall/models/banco.dart';
+import 'package:tribunall/models/bancos.dart';
 import 'package:tribunall/state/app_state.dart';
 
 const _bancoPrueba = Banco(
@@ -14,10 +15,30 @@ const _bancoPrueba = Banco(
   sP: ['dar un beso apasionado'],
 );
 
+const _bancosTematicos = Bancos(
+  bancos: [
+    BancoTematico(
+      id: 'grupos',
+      nombre: 'Grupos',
+      emoji: '👥',
+      descripcion: 'Para grupos',
+      minJugadores: 3,
+      cN: ['interrumpir al juez con una carcajada'],
+      sN: ['hacer una reverencia dramática'],
+      cI: [],
+      sI: [],
+      cP: [],
+      sP: [],
+    ),
+  ],
+  cartasDefensa: [],
+);
+
 Widget _buildTestApp({bool esPremium = false}) {
   return TribunalAppScope(
     appState: AppState(
       banco: _bancoPrueba,
+      bancos: _bancosTematicos,
       esPremiumInicial: esPremium,
       enableMonetization: false,
     ),

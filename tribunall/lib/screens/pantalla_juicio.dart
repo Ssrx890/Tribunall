@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/nivel_juego.dart';
+import '../models/bancos.dart';
 import '../state/app_state.dart';
 import '../theme/app_theme_data.dart';
 
@@ -21,13 +22,19 @@ class _PantallaJuicioState extends State<PantallaJuicio>
   late final Animation<double> _escalaAnim;
 
   String _acusado = '';
+  String _juez = '';
   String _cargo = '';
   String _sentencia = '';
   bool _mostrandoSentencia = false;
+  bool _absuelto = false;
   bool _sinDatos = false;
+  CartaDefensa? _cartaDefensa;
   int _tiempoRestante = 0;
   Timer? _timer;
   final _rng = Random();
+  // Cada caso incrementa _generacion. El addPostFrameCallback verifica que
+  // sigue siendo el callback activo antes de arrancar animación y timer.
+  int _generacion = 0;
 
   @override
   void initState() {
@@ -37,69 +44,106 @@ class _PantallaJuicioState extends State<PantallaJuicio>
       duration: const Duration(milliseconds: 400),
     );
     _escalaAnim = CurvedAnimation(parent: _animCtrl, curve: Curves.elasticOut);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _generarCaso());
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final s = context.read<AppState>();
+      if (!s.tutorialVisto) {
+        await _mostrarTutorial();
+      }
+      if (mounted) _generarCaso();
+    });
+  }
+
+  Future<void> _mostrarTutorial() async {
+    final s = context.read<AppState>();
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const _TutorialDialog(),
+    );
+    await s.marcarTutorialVisto();
   }
 
   void _generarCaso() {
+    if (!mounted) return;
+    _timer?.cancel();
+    _timer = null;
+    final gen = ++_generacion;
+
     final s = context.read<AppState>();
+    final banco = s.bancoSeleccionado;
     final List<String> cargosPool;
     final List<String> sentenciasPool;
 
     switch (s.nivel) {
       case NivelJuego.intermedio:
-        cargosPool = [...s.banco.cN, ...s.banco.cI];
-        sentenciasPool = [...s.banco.sN, ...s.banco.sI];
+        cargosPool = [...banco.cN, ...banco.cI];
+        sentenciasPool = [...banco.sN, ...banco.sI];
         break;
       case NivelJuego.picante:
-        cargosPool = [...s.banco.cN, ...s.banco.cI, ...s.banco.cP];
-        sentenciasPool = [...s.banco.sN, ...s.banco.sI, ...s.banco.sP];
+        cargosPool = [...banco.cN, ...banco.cI, ...banco.cP];
+        sentenciasPool = [...banco.sN, ...banco.sI, ...banco.sP];
         break;
       case NivelJuego.normal:
-        cargosPool = s.banco.cN;
-        sentenciasPool = s.banco.sN;
+        cargosPool = banco.cN;
+        sentenciasPool = banco.sN;
         break;
     }
 
-    if (s.acusados.isEmpty || cargosPool.isEmpty || sentenciasPool.isEmpty) {
-      setState(() {
-        _sinDatos = true;
-      });
+    if (s.acusados.length < 2 || cargosPool.isEmpty || sentenciasPool.isEmpty) {
+      setState(() => _sinDatos = true);
       return;
     }
 
-    final acusado = s.acusados[_rng.nextInt(s.acusados.length)];
+    final jugadores = s.acusados.toList();
+    final juezIdx = _rng.nextInt(jugadores.length);
+    final juez = jugadores[juezIdx];
+    final restantes = [...jugadores]..removeAt(juezIdx);
+    if (restantes.isEmpty) {
+      setState(() => _sinDatos = true);
+      return;
+    }
+    final acusado = restantes[_rng.nextInt(restantes.length)];
     final cargo = cargosPool[_rng.nextInt(cargosPool.length)];
     final sentencia = sentenciasPool[_rng.nextInt(sentenciasPool.length)];
 
+    CartaDefensa? carta;
+    if (s.cartasDefensa.isNotEmpty) {
+      carta = s.cartasDefensa[_rng.nextInt(s.cartasDefensa.length)];
+    }
+
+    s.incrementarContador();
+    final shouldShowAd =
+        !s.esPremium && s.contadorJuicios % 5 == 0 && s.contadorJuicios > 0;
+
     setState(() {
       _sinDatos = false;
+      _juez = juez;
       _acusado = acusado;
       _cargo = cargo;
       _sentencia = sentencia;
+      _cartaDefensa = carta;
       _mostrandoSentencia = false;
+      _absuelto = false;
       _tiempoRestante = s.tiempoConfigurado;
     });
 
-    _animCtrl.forward(from: 0);
-    _iniciarTimer(s);
-    s.incrementarContador();
-
-    if (!s.esPremium && s.contadorJuicios % 5 == 0 && s.contadorJuicios > 0) {
-      s.mostrarInterstitial();
-    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || gen != _generacion) return;
+      _animCtrl.stop();
+      _animCtrl.forward(from: 0);
+      _iniciarTimer(context.read<AppState>());
+      if (shouldShowAd) context.read<AppState>().mostrarInterstitial();
+    });
   }
 
   void _iniciarTimer(AppState s) {
     _timer?.cancel();
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (!mounted) {
-        timer.cancel();
-        return;
-      }
-
+    _timer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) { t.cancel(); return; }
       if (_tiempoRestante <= 1) {
-        timer.cancel();
-        if (!_mostrandoSentencia) _revelarSentencia();
+        t.cancel();
+        _timer = null;
+        if (!_mostrandoSentencia && !_absuelto) _revelarSentencia();
       } else {
         setState(() => _tiempoRestante--);
       }
@@ -107,11 +151,23 @@ class _PantallaJuicioState extends State<PantallaJuicio>
   }
 
   void _revelarSentencia() {
-    setState(() {
-      _mostrandoSentencia = true;
-    });
-    _animCtrl.forward(from: 0);
+    if (!mounted || _mostrandoSentencia || _absuelto) return;
     _timer?.cancel();
+    _timer = null;
+    setState(() { _mostrandoSentencia = true; });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) { _animCtrl.stop(); _animCtrl.forward(from: 0); }
+    });
+  }
+
+  void _librar() {
+    if (!mounted || _absuelto || _mostrandoSentencia) return;
+    _timer?.cancel();
+    _timer = null;
+    setState(() { _absuelto = true; });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) { _animCtrl.stop(); _animCtrl.forward(from: 0); }
+    });
   }
 
   @override
@@ -162,11 +218,11 @@ class _PantallaJuicioState extends State<PantallaJuicio>
           title: Text(
             'EL TRIBUNAL',
             style: TextStyle(
-              fontFamily: 'Cinzel',
-              fontSize: 14,
+              fontFamily: 'Oswald',
+              fontSize: 16,
               color: th.accent,
-              letterSpacing: 3,
-              fontWeight: FontWeight.w900,
+              letterSpacing: 2,
+              fontWeight: FontWeight.w700,
             ),
           ),
           centerTitle: true,
@@ -211,42 +267,95 @@ class _PantallaJuicioState extends State<PantallaJuicio>
   }
 
   Widget _buildTimer(AppThemeData th) {
-    final isUrgent = _tiempoRestante <= 5 && !_mostrandoSentencia;
+    final isUrgent = _tiempoRestante <= 5 &&
+        !_mostrandoSentencia &&
+        !_absuelto;
+    const verdeLibre = Color(0xFF4ADE80);
 
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
+    final String timerLabel;
+    final Color timerColor;
+    final Color timerBg;
+    final Color timerBorder;
+
+    if (_absuelto) {
+      timerLabel = '¡LIBRE!';
+      timerColor = verdeLibre;
+      timerBg = verdeLibre.withValues(alpha: 0.12);
+      timerBorder = verdeLibre;
+    } else if (_mostrandoSentencia) {
+      timerLabel = '¡SENTENCIA!';
+      timerColor = th.textoSec;
+      timerBg = th.superficie;
+      timerBorder = th.borde;
+    } else if (isUrgent) {
+      timerLabel = '${_tiempoRestante}s';
+      timerColor = th.rojoBright;
+      timerBg = th.rojoBright.withValues(alpha: 0.15);
+      timerBorder = th.rojoBright;
+    } else {
+      timerLabel = '${_tiempoRestante}s';
+      timerColor = th.textoSec;
+      timerBg = th.superficie;
+      timerBorder = th.borde;
+    }
+
+    return Column(
       children: [
-        AnimatedContainer(
-          duration: const Duration(milliseconds: 300),
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-          decoration: BoxDecoration(
-            color: isUrgent
-                ? th.rojoBright.withValues(alpha: 0.15)
-                : th.superficie,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: isUrgent ? th.rojoBright : th.borde,
+        if (_juez.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Text('👑 ', style: TextStyle(fontSize: 13)),
+                Text(
+                  'Juez: $_juez',
+                  style: TextStyle(
+                    fontFamily: 'Oswald',
+                    fontSize: 13,
+                    color: th.accent,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ],
             ),
           ),
-          child: Row(
-            children: [
-              Icon(
-                Icons.timer_outlined,
-                color: isUrgent ? th.rojoBright : th.textoSec,
-                size: 16,
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+              decoration: BoxDecoration(
+                color: timerBg,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: timerBorder),
               ),
-              const SizedBox(width: 6),
-              Text(
-                _mostrandoSentencia ? '¡SENTENCIA!' : '${_tiempoRestante}s',
-                style: TextStyle(
-                  fontFamily: 'Cinzel',
-                  color: isUrgent ? th.rojoBright : th.textoSec,
-                  fontWeight: FontWeight.w900,
-                  fontSize: 14,
-                ),
+              child: Row(
+                children: [
+                  Icon(
+                    _absuelto
+                        ? Icons.check_circle_outline_rounded
+                        : Icons.timer_outlined,
+                    color: timerColor,
+                    size: 16,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    timerLabel,
+                    style: TextStyle(
+                      fontFamily: 'Oswald',
+                      color: timerColor,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15,
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ],
     );
@@ -302,9 +411,11 @@ class _PantallaJuicioState extends State<PantallaJuicio>
             ),
           ],
         ),
-        child: _mostrandoSentencia
-            ? _buildSentenciaContent(th)
-            : _buildCargoContent(th),
+        child: _absuelto
+            ? _buildAbsueltoContent(th)
+            : _mostrandoSentencia
+                ? _buildSentenciaContent(th)
+                : _buildCargoContent(th),
       ),
     );
   }
@@ -323,9 +434,9 @@ class _PantallaJuicioState extends State<PantallaJuicio>
           child: Text(
             'EL ACUSADO',
             style: TextStyle(
-              fontFamily: 'Cinzel',
-              fontSize: 10,
-              letterSpacing: 2,
+              fontFamily: 'Oswald',
+              fontSize: 11,
+              letterSpacing: 1.5,
               color: th.rojoBright,
             ),
           ),
@@ -335,9 +446,9 @@ class _PantallaJuicioState extends State<PantallaJuicio>
           _acusado,
           textAlign: TextAlign.center,
           style: TextStyle(
-            fontFamily: 'Cinzel',
-            fontSize: 30,
-            fontWeight: FontWeight.w900,
+            fontFamily: 'Oswald',
+            fontSize: 34,
+            fontWeight: FontWeight.w700,
             color: th.textoPrim,
           ),
         ),
@@ -354,9 +465,9 @@ class _PantallaJuicioState extends State<PantallaJuicio>
           child: Text(
             'SE LE ACUSA DE...',
             style: TextStyle(
-              fontFamily: 'Cinzel',
-              fontSize: 10,
-              letterSpacing: 2,
+              fontFamily: 'Oswald',
+              fontSize: 11,
+              letterSpacing: 1.5,
               color: th.accent,
             ),
           ),
@@ -369,6 +480,169 @@ class _PantallaJuicioState extends State<PantallaJuicio>
             fontSize: 18,
             color: th.textoSec,
             height: 1.5,
+          ),
+        ),
+        if (_cartaDefensa != null) ...[  
+          const SizedBox(height: 20),
+          Divider(color: th.borde, thickness: 1),
+          const SizedBox(height: 12),
+          GestureDetector(
+            onTap: () => _mostrarCarta(th),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: const Color(0xFF7C3AED).withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: const Color(0xFF7C3AED).withValues(alpha: 0.5),
+                ),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(_cartaDefensa!.emoji,
+                      style: const TextStyle(fontSize: 18)),
+                  const SizedBox(width: 8),
+                  Text(
+                    _cartaDefensa!.titulo,
+                    style: const TextStyle(
+                      fontFamily: 'Oswald',
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF7C3AED),
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  const Icon(Icons.info_outline,
+                      color: Color(0xFF7C3AED), size: 14),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  void _mostrarCarta(AppThemeData th) {
+    if (_cartaDefensa == null) return;
+    showDialog<void>(
+      context: context,
+      builder: (_) => Dialog(
+        backgroundColor: const Color(0xFF1C1C1E),
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        insetPadding:
+            const EdgeInsets.symmetric(horizontal: 32, vertical: 80),
+        child: Padding(
+          padding: const EdgeInsets.all(28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(_cartaDefensa!.emoji,
+                  style: const TextStyle(fontSize: 48)),
+              const SizedBox(height: 16),
+              Text(
+                _cartaDefensa!.titulo,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontFamily: 'Oswald',
+                  fontSize: 22,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF7C3AED),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                _cartaDefensa!.descripcion,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.white70,
+                  height: 1.6,
+                  fontSize: 15,
+                ),
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF7C3AED),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                  child: const Text(
+                    'ENTENDIDO',
+                    style: TextStyle(
+                      fontFamily: 'Oswald',
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAbsueltoContent(AppThemeData th) {
+    const verde = Color(0xFF4ADE80);
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        const Text('🎉', style: TextStyle(fontSize: 48)),
+        const SizedBox(height: 20),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          decoration: BoxDecoration(
+            color: verde.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: verde.withValues(alpha: 0.5)),
+          ),
+          child: const Text(
+            '✅  ¡LIBRE DE CARGOS!',
+            style: TextStyle(
+              fontFamily: 'Oswald',
+              fontSize: 11,
+              letterSpacing: 1.5,
+              color: verde,
+            ),
+          ),
+        ),
+        const SizedBox(height: 24),
+        Text(
+          _acusado,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            fontFamily: 'Oswald',
+            fontSize: 30,
+            fontWeight: FontWeight.w700,
+            color: verde,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'ha convencido al juez',
+          style: TextStyle(color: th.textoSec, fontSize: 14),
+        ),
+        const SizedBox(height: 16),
+        Divider(color: th.borde),
+        const SizedBox(height: 16),
+        Text(
+          'El acusado se defiende con éxito y el juez $_juez dicta su inocencia.',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: 15,
+            color: th.textoPrim,
+            height: 1.6,
+            fontWeight: FontWeight.w500,
           ),
         ),
       ],
@@ -389,9 +663,9 @@ class _PantallaJuicioState extends State<PantallaJuicio>
           child: Text(
             '⚖️  SENTENCIA DICTADA',
             style: TextStyle(
-              fontFamily: 'Cinzel',
-              fontSize: 10,
-              letterSpacing: 2,
+              fontFamily: 'Oswald',
+              fontSize: 11,
+              letterSpacing: 1.5,
               color: th.accent,
             ),
           ),
@@ -401,8 +675,8 @@ class _PantallaJuicioState extends State<PantallaJuicio>
           _acusado,
           textAlign: TextAlign.center,
           style: TextStyle(
-            fontFamily: 'Cinzel',
-            fontSize: 22,
+            fontFamily: 'Oswald',
+            fontSize: 26,
             fontWeight: FontWeight.w700,
             color: th.textoPrim,
           ),
@@ -451,28 +725,53 @@ class _PantallaJuicioState extends State<PantallaJuicio>
       );
     }
 
-    if (!_mostrandoSentencia) {
-      return SizedBox(
-        width: double.infinity,
-        height: 52,
-        child: ElevatedButton(
-          onPressed: _revelarSentencia,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: th.rojoBright,
-            foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            elevation: 4,
-            textStyle: const TextStyle(
-              fontFamily: 'Cinzel',
-              fontSize: 13,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 2,
+    if (!_mostrandoSentencia && !_absuelto) {
+      return Row(
+        children: [
+          Expanded(
+            child: OutlinedButton(
+              onPressed: _librar,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF4ADE80),
+                side: const BorderSide(color: Color(0xFF4ADE80)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                textStyle: const TextStyle(
+                  fontFamily: 'Oswald',
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1,
+                ),
+              ),
+              child: const Text('✅ LIBRAR'),
             ),
           ),
-          child: const Text('⚖️  DICTAR SENTENCIA'),
-        ),
+          const SizedBox(width: 12),
+          Expanded(
+            flex: 2,
+            child: ElevatedButton(
+              onPressed: _revelarSentencia,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: th.rojoBright,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                elevation: 4,
+                textStyle: const TextStyle(
+                  fontFamily: 'Oswald',
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1,
+                ),
+              ),
+              child: const Text('⚖️  DICTAR SENTENCIA'),
+            ),
+          ),
+        ],
       );
     }
 
@@ -509,10 +808,10 @@ class _PantallaJuicioState extends State<PantallaJuicio>
               padding: const EdgeInsets.symmetric(vertical: 14),
               elevation: 4,
               textStyle: const TextStyle(
-                fontFamily: 'Cinzel',
-                fontSize: 12,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 1.5,
+                fontFamily: 'Oswald',
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1,
               ),
             ),
             child: const Text('SIGUIENTE CASO ⟶'),
@@ -521,4 +820,173 @@ class _PantallaJuicioState extends State<PantallaJuicio>
       ],
     );
   }
+}
+
+class _TutorialDialog extends StatefulWidget {
+  const _TutorialDialog();
+
+  @override
+  State<_TutorialDialog> createState() => _TutorialDialogState();
+}
+
+class _TutorialDialogState extends State<_TutorialDialog> {
+  int _pagina = 0;
+
+  static const _pasos = [
+    _TutorialPaso(
+      emoji: '\u2696\ufe0f',
+      titulo: 'Bienvenido al Tribunal',
+      descripcion:
+          'Un juego de mesa para grupos. Cada ronda, uno es el juez y otro se sienta en el banquillo de los acusados.',
+    ),
+    _TutorialPaso(
+      emoji: '\ud83c\udfb2',
+      titulo: 'Roles al azar',
+      descripcion:
+          'Cada ronda el juego elige automáticamente quién es el \u00a0👑\u00a0Juez y quién es el \u00a0👤\u00a0Acusado. \u00a1Nadie se libra!',
+    ),
+    _TutorialPaso(
+      emoji: '\ud83d�',
+      titulo: 'El cargo',
+      descripcion:
+          'El acusado recibe un cargo absurdo o picante. El grupo debate si es culpable mientras corre el tiempo.',
+    ),
+    _TutorialPaso(
+      emoji: '\u23f1\ufe0f',
+      titulo: 'El tiempo',
+      descripcion:
+          'Cuando el tiempo se acaba (o pulsas el botón) el juez dicta sentencia. \u00a1La sentencia es ley!',
+    ),
+    _TutorialPaso(
+      emoji: '\ud83c\udf89',
+      titulo: '\u00a1A jugar!',
+      descripcion:
+          'Minimum 3 jugadores. Cuantos más, mejor. Pulsa \u00abSIGUIENTE CASO\u00bb para rotar de ronda en ronda.',
+    ),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final paso = _pasos[_pagina];
+    final esUltimo = _pagina == _pasos.length - 1;
+    final th = AppThemeData.forNivel(NivelJuego.normal);
+
+    return Dialog(
+      backgroundColor: const Color(0xFF1C1C1E),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 28, vertical: 60),
+      child: Padding(
+        padding: const EdgeInsets.all(28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // indicador de paginación
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(
+                _pasos.length,
+                (i) => AnimatedContainer(
+                  duration: const Duration(milliseconds: 250),
+                  margin: const EdgeInsets.symmetric(horizontal: 3),
+                  width: i == _pagina ? 20 : 7,
+                  height: 7,
+                  decoration: BoxDecoration(
+                    color: i == _pagina
+                        ? th.accent
+                        : th.accent.withValues(alpha: 0.25),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 28),
+            Text(paso.emoji, style: const TextStyle(fontSize: 52)),
+            const SizedBox(height: 16),
+            Text(
+              paso.titulo,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontFamily: 'Oswald',
+                fontSize: 22,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+                letterSpacing: 0.5,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              paso.descripcion,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.white.withValues(alpha: 0.7),
+                height: 1.6,
+              ),
+            ),
+            const SizedBox(height: 32),
+            Row(
+              children: [
+                if (_pagina > 0)
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => setState(() => _pagina--),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: th.textoSec,
+                        side: BorderSide(color: th.borde),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      child: const Text('Atrás'),
+                    ),
+                  ),
+                if (_pagina > 0) const SizedBox(width: 10),
+                Expanded(
+                  flex: 2,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      if (esUltimo) {
+                        Navigator.of(context).pop();
+                      } else {
+                        setState(() => _pagina++);
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: th.accent,
+                      foregroundColor: Colors.black,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      elevation: 0,
+                      textStyle: const TextStyle(
+                        fontFamily: 'Oswald',
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1,
+                      ),
+                    ),
+                    child: Text(esUltimo ? '\u00a1EMPEZAR!' : 'SIGUIENTE'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TutorialPaso {
+  final String emoji;
+  final String titulo;
+  final String descripcion;
+
+  const _TutorialPaso({
+    required this.emoji,
+    required this.titulo,
+    required this.descripcion,
+  });
 }
