@@ -16,12 +16,28 @@ class PantallaAcusados extends StatefulWidget {
   State<PantallaAcusados> createState() => _PantallaAcusadosState();
 }
 
-class _PantallaAcusadosState extends State<PantallaAcusados> {
+class _PantallaAcusadosState extends State<PantallaAcusados>
+    with TickerProviderStateMixin {
   final _ctrl = TextEditingController();
+  late final AnimationController _logoCtrl;
+  late final Animation<double> _logoFloat;
+
+  @override
+  void initState() {
+    super.initState();
+    _logoCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 2),
+    )..repeat(reverse: true);
+    _logoFloat = Tween<double>(begin: -5.0, end: 5.0).animate(
+      CurvedAnimation(parent: _logoCtrl, curve: Curves.easeInOut),
+    );
+  }
 
   @override
   void dispose() {
     _ctrl.dispose();
+    _logoCtrl.dispose();
     super.dispose();
   }
 
@@ -36,8 +52,15 @@ class _PantallaAcusadosState extends State<PantallaAcusados> {
       );
       return;
     }
+    if (s.acusados.contains(texto)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Ese jugador ya está en la lista.')),
+      );
+      return;
+    }
     s.agregarAcusado(texto);
     _ctrl.clear();
+    FocusScope.of(context).unfocus();
   }
 
   Future<void> _onIntermedio(AppState s) async {
@@ -122,10 +145,17 @@ class _PantallaAcusadosState extends State<PantallaAcusados> {
                       children: [
                         Column(
                           children: [
-                            Text(
-                              '⚖️',
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(fontSize: 56),
+                            AnimatedBuilder(
+                              animation: _logoFloat,
+                              builder: (context, child) => Transform.translate(
+                                offset: Offset(0, _logoFloat.value),
+                                child: child,
+                              ),
+                              child: const Text(
+                                '⚖️',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(fontSize: 56),
+                              ),
                             ),
                             const SizedBox(height: 8),
                             Text(
@@ -176,7 +206,13 @@ class _PantallaAcusadosState extends State<PantallaAcusados> {
                     _buildAgregarAcusado(s, th),
                     const SizedBox(height: 16),
                     ...s.acusados.asMap().entries.map(
-                          (e) => _buildChip(e.value, e.key, s, th),
+                          (e) => _AnimatedChip(
+                            key: ValueKey(e.value),
+                            nombre: e.value,
+                            index: e.key,
+                            s: s,
+                            th: th,
+                          ),
                         ),
                     const SizedBox(height: 24),
                     _buildBotonIniciar(s, th),
@@ -316,7 +352,7 @@ class _PantallaAcusadosState extends State<PantallaAcusados> {
                   label: 'PICANTE',
                   sublabel: s.esPremium
                       ? 'PREMIUM ✓'
-                      : (s.compraPicanteDisponible ? '\$1.99' : 'PRÓXIMAMENTE'),
+                      : (s.compraPicanteDisponible ? '\$1.99' : 'PREMIUM'),
                   selected: s.nivel == NivelJuego.picante,
                   color: const Color(0xFFFF2D55),
                   onTap: () => _onPicante(s),
@@ -423,34 +459,6 @@ class _PantallaAcusadosState extends State<PantallaAcusados> {
     );
   }
 
-  Widget _buildChip(String nombre, int index, AppState s, AppThemeData th) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: th.superficie,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: th.borde),
-      ),
-      child: Row(
-        children: [
-          Text('👤', style: const TextStyle(fontSize: 16)),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              nombre,
-              style: TextStyle(color: th.textoPrim, fontSize: 15),
-            ),
-          ),
-          GestureDetector(
-            onTap: () => s.removerAcusado(index),
-            child: Icon(Icons.close, color: th.textoSec, size: 18),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildBotonIniciar(AppState s, AppThemeData th) {
     final minJ = s.bancoSeleccionado.minJugadores;
     final canStart = s.acusados.length >= minJ;
@@ -471,45 +479,80 @@ class _PantallaAcusadosState extends State<PantallaAcusados> {
 
     return Column(
       children: [
-        if (!canStart && s.acusados.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: Text(
-              'Añade al menos $faltantes jugador${faltantes == 1 ? '' : 'es'} más para empezar',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 12, color: th.textoSec),
-            ),
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 280),
+          child: (!canStart && s.acusados.isNotEmpty)
+              ? Padding(
+                  key: const ValueKey('hint'),
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Text(
+                    'Añade al menos $faltantes jugador${faltantes == 1 ? '' : 'es'} más para empezar',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 12, color: th.textoSec),
+                  ),
+                )
+              : const SizedBox.shrink(key: ValueKey('no_hint')),
+        ),
+        TweenAnimationBuilder<double>(
+          tween: Tween<double>(begin: 0.92, end: canStart ? 1.0 : 0.96),
+          duration: const Duration(milliseconds: 600),
+          curve: Curves.elasticOut,
+          builder: (context, scale, child) => Transform.scale(
+            scale: scale,
+            child: child,
           ),
-        AnimatedContainer(
-          duration: const Duration(milliseconds: 300),
-          width: double.infinity,
-          height: 56,
-          child: ElevatedButton(
-            onPressed: canStart
-                ? () {
-                    FocusScope.of(context).unfocus();
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (_) => const PantallaJuicio()),
-                    );
-                  }
-                : null,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: canStart ? th.accent : th.textoApagado,
-              foregroundColor: th.fondo,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
+          child: SizedBox(
+            width: double.infinity,
+            height: 56,
+            child: ElevatedButton(
+              onPressed: canStart
+                  ? () {
+                      FocusScope.of(context).unfocus();
+                      Navigator.push(
+                        context,
+                        PageRouteBuilder(
+                          pageBuilder: (ctx, anim, _) =>
+                              const PantallaJuicio(),
+                          transitionsBuilder: (ctx, anim, _, child) {
+                            return FadeTransition(
+                              opacity: CurvedAnimation(
+                                parent: anim,
+                                curve: Curves.easeOut,
+                              ),
+                              child: SlideTransition(
+                                position: Tween<Offset>(
+                                  begin: const Offset(0, 0.06),
+                                  end: Offset.zero,
+                                ).animate(CurvedAnimation(
+                                  parent: anim,
+                                  curve: Curves.easeOutCubic,
+                                )),
+                                child: child,
+                              ),
+                            );
+                          },
+                          transitionDuration:
+                              const Duration(milliseconds: 450),
+                        ),
+                      );
+                    }
+                  : null,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: canStart ? th.accent : th.textoApagado,
+                foregroundColor: th.fondo,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                textStyle: const TextStyle(
+                  fontFamily: 'Oswald',
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.5,
+                ),
+                elevation: canStart ? 6 : 0,
               ),
-              textStyle: const TextStyle(
-                fontFamily: 'Oswald',
-                fontSize: 15,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 1.5,
-              ),
-              elevation: canStart ? 6 : 0,
+              child: Text(label),
             ),
-            child: Text(label),
           ),
         ),
       ],
@@ -792,6 +835,92 @@ class _PremiumModal extends StatelessWidget {
                   'Restaurar compra',
                   style: TextStyle(color: Color(0xFFFFB3C1), fontSize: 13),
                 ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Chip de jugador animado ───────────────────────────────────────────────────
+
+class _AnimatedChip extends StatefulWidget {
+  final String nombre;
+  final int index;
+  final AppState s;
+  final AppThemeData th;
+
+  const _AnimatedChip({
+    required super.key,
+    required this.nombre,
+    required this.index,
+    required this.s,
+    required this.th,
+  });
+
+  @override
+  State<_AnimatedChip> createState() => _AnimatedChipState();
+}
+
+class _AnimatedChipState extends State<_AnimatedChip>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final Animation<double> _opacity;
+  late final Animation<Offset> _slide;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 380),
+    );
+    _opacity = CurvedAnimation(parent: _ctrl, curve: Curves.easeOut);
+    _slide = Tween<Offset>(
+      begin: const Offset(0.35, 0),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOutCubic));
+    _ctrl.forward();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _opacity,
+      child: SlideTransition(
+        position: _slide,
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: widget.th.superficie,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: widget.th.borde),
+          ),
+          child: Row(
+            children: [
+              const Text('👤', style: TextStyle(fontSize: 16)),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  widget.nombre,
+                  style: TextStyle(
+                    color: widget.th.textoPrim,
+                    fontSize: 15,
+                  ),
+                ),
+              ),
+              GestureDetector(
+                onTap: () => widget.s.removerAcusado(widget.index),
+                child: Icon(Icons.close, color: widget.th.textoSec, size: 18),
               ),
             ],
           ),

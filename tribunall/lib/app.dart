@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import 'models/nivel_juego.dart';
 import 'screens/pantalla_acusados.dart';
+import 'services/music_service.dart';
 import 'state/app_state.dart';
 import 'theme/app_theme_data.dart';
 
@@ -18,8 +19,14 @@ class TribunalAppScope extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider<AppState>.value(
-      value: appState,
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider<AppState>.value(value: appState),
+        Provider<MusicService>(
+          create: (_) => MusicService(),
+          dispose: (_, svc) => svc.disposeService(),
+        ),
+      ],
       child: child,
     );
   }
@@ -33,7 +40,7 @@ class ElTribunalApp extends StatelessWidget {
     final nivel = context.select<AppState, NivelJuego>((s) => s.nivel);
     final th = AppThemeData.forNivel(nivel);
     return MaterialApp(
-      title: 'El Tribunal',
+      title: 'Tribunall',
       debugShowCheckedModeBanner: false,
       theme: ThemeData.dark().copyWith(
         scaffoldBackgroundColor: th.fondo,

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -18,6 +19,7 @@ class AppState extends ChangeNotifier {
   bool _esPremium;
   bool _tutorialVisto;
   bool _sonidoActivo;
+  bool _musicaActiva;
   bool _vibracionActiva;
   int _contadorJuicios = 0;
   int _tiempoConfigurado = 20;
@@ -40,11 +42,13 @@ class AppState extends ChangeNotifier {
     required bool esPremiumInicial,
     bool tutorialVistoInicial = false,
     bool sonidoActivoInicial = true,
+    bool musicaActivaInicial = true,
     bool vibracionActivaInicial = true,
     bool enableMonetization = true,
   })  : _esPremium = esPremiumInicial,
         _tutorialVisto = tutorialVistoInicial,
         _sonidoActivo = sonidoActivoInicial,
+        _musicaActiva = musicaActivaInicial,
         _vibracionActiva = vibracionActivaInicial,
         _enableMonetization = enableMonetization {
     if (!_enableMonetization) return;
@@ -80,6 +84,7 @@ class AppState extends ChangeNotifier {
   bool get esPremium => _esPremium;
   bool get tutorialVisto => _tutorialVisto;
   bool get sonidoActivo => _sonidoActivo;
+  bool get musicaActiva => _musicaActiva;
   bool get vibracionActiva => _vibracionActiva;
   bool get cargandoPago => _cargandoPago;
   bool get iapDisponible => _iapDisponible;
@@ -105,6 +110,7 @@ class AppState extends ChangeNotifier {
   void agregarAcusado(String nombre) {
     final trimmed = nombre.trim();
     if (trimmed.isEmpty || trimmed.length > 50) return;
+    if (_acusados.contains(trimmed)) return;
     _acusados.add(trimmed);
     notifyListeners();
   }
@@ -144,6 +150,13 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('sonido_activo', value);
+  }
+
+  Future<void> setMusica(bool value) async {
+    _musicaActiva = value;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('musica_activa', value);
   }
 
   Future<void> setVibracion(bool value) async {
@@ -199,8 +212,8 @@ class AppState extends ChangeNotifier {
     _esPremium = value;
     _cargandoPago = false;
     try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('es_premium', value);
+      const storage = FlutterSecureStorage();
+      await storage.write(key: 'es_premium', value: value.toString());
     } catch (e) {
       debugPrint('Error al guardar estado premium: $e');
     }
@@ -291,7 +304,7 @@ class AppState extends ChangeNotifier {
   }
 
   void _cargarRewarded() {
-    if (!_enableMonetization || !MonetizationConfig.adsEnabled) return;
+    if (!anunciosActivos) return;
 
     RewardedAd.load(
       adUnitId: MonetizationConfig.rewardedAdId,
@@ -316,6 +329,12 @@ class AppState extends ChangeNotifier {
         _interstitialAd = null;
         _cargarInterstitial();
       },
+      onAdFailedToShowFullScreenContent: (ad, error) {
+        debugPrint('Interstitial ad failed to show: $error');
+        ad.dispose();
+        _interstitialAd = null;
+        _cargarInterstitial();
+      },
     );
     _interstitialAd!.show();
   }
@@ -326,23 +345,32 @@ class AppState extends ChangeNotifier {
 
     if (_rewardedAd == null) {
       final completer = Completer<bool>();
+      var timedOut = false;
       RewardedAd.load(
         adUnitId: MonetizationConfig.rewardedAdId,
         request: const AdRequest(),
         rewardedAdLoadCallback: RewardedAdLoadCallback(
           onAdLoaded: (ad) {
-            _rewardedAd = ad;
-            completer.complete(true);
+            if (timedOut) {
+              // Timeout ya disparado: el anuncio llegó tarde, descartarlo.
+              ad.dispose();
+            } else {
+              _rewardedAd = ad;
+              completer.complete(true);
+            }
           },
           onAdFailedToLoad: (error) {
             debugPrint('Rewarded ad failed to load on demand: $error');
-            completer.complete(false);
+            if (!completer.isCompleted) completer.complete(false);
           },
         ),
       );
       final loaded = await completer.future.timeout(
         const Duration(seconds: 10),
-        onTimeout: () => false,
+        onTimeout: () {
+          timedOut = true;
+          return false;
+        },
       );
       if (!loaded) return false;
     }
@@ -354,7 +382,14 @@ class AppState extends ChangeNotifier {
         ad.dispose();
         _rewardedAd = null;
         _cargarRewarded();
-        completer.complete(rewarded);
+        if (!completer.isCompleted) completer.complete(rewarded);
+      },
+      onAdFailedToShowFullScreenContent: (ad, error) {
+        debugPrint('Rewarded ad failed to show: $error');
+        ad.dispose();
+        _rewardedAd = null;
+        _cargarRewarded();
+        if (!completer.isCompleted) completer.complete(false);
       },
     );
     _rewardedAd!.show(

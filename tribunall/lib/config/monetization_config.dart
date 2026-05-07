@@ -7,7 +7,8 @@ class MonetizationConfig {
 
   /// Ads only run in release builds. In debug/profile (emulator, flutter run)
   /// the AdMob WebView renderer crashes on emulators without GPU support.
-  static bool get adsEnabled => kReleaseMode && (Platform.isAndroid || Platform.isIOS);
+  static bool get adsEnabled =>
+      !kIsWeb && kReleaseMode && (Platform.isAndroid || Platform.isIOS);
 
   static const bool iapEnabled = false;
 
@@ -15,17 +16,17 @@ class MonetizationConfig {
       iapEnabled && productPicanteId.trim().isNotEmpty;
 
   static String get bannerAdId {
-    if (Platform.isAndroid) return 'ca-app-pub-3940256099942544/6300978111';
-    return 'ca-app-pub-3940256099942544/2934735716';
+    if (Platform.isAndroid) return 'ca-app-pub-1676922798634610/4629393187';
+    return 'ca-app-pub-1676922798634610/4629393187';
   }
 
   static String get interstitialAdId {
-    if (Platform.isAndroid) return 'ca-app-pub-3940256099942544/1033173712';
-    return 'ca-app-pub-3940256099942544/4411468910';
+    if (Platform.isAndroid) return 'ca-app-pub-1676922798634610/9109967787';
+    return 'ca-app-pub-1676922798634610/9109967787';
   }
 
   static String get rewardedAdId {
-    if (Platform.isAndroid) return 'ca-app-pub-3940256099942544/5224354917';
-    return 'ca-app-pub-3940256099942544/1712485313';
+    if (Platform.isAndroid) return 'ca-app-pub-1676922798634610/8048167556';
+    return 'ca-app-pub-1676922798634610/8048167556';
   }
 }

@@ -62,6 +62,15 @@ class _OpcionesSheet extends StatelessWidget {
             _SectionLabel(label: 'PREFERENCIAS', th: th),
             const SizedBox(height: 8),
             _ToggleTile(
+              icon: s.musicaActiva ? Icons.music_note_rounded : Icons.music_off_rounded,
+              titulo: 'Música',
+              subtitulo: s.musicaActiva ? 'Activada' : 'Desactivada',
+              valor: s.musicaActiva,
+              th: th,
+              onChange: (v) => s.setMusica(v),
+            ),
+            const SizedBox(height: 8),
+            _ToggleTile(
               icon: s.sonidoActivo ? Icons.volume_up_rounded : Icons.volume_off_rounded,
               titulo: 'Sonido',
               subtitulo: s.sonidoActivo ? 'Activado' : 'Desactivado',

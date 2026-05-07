@@ -1,11 +1,13 @@
 import 'dart:async';
 import 'dart:math';
 
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/nivel_juego.dart';
 import '../models/bancos.dart';
+import '../services/music_service.dart';
 import '../state/app_state.dart';
 import '../theme/app_theme_data.dart';
 
@@ -17,9 +19,12 @@ class PantallaJuicio extends StatefulWidget {
 }
 
 class _PantallaJuicioState extends State<PantallaJuicio>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late final AnimationController _animCtrl;
+  late final AnimationController _pulseCtrl;
   late final Animation<double> _escalaAnim;
+  late final Animation<double> _fadeAnim;
+  late final Animation<double> _pulseAnim;
 
   String _acusado = '';
   String _juez = '';
@@ -32,6 +37,9 @@ class _PantallaJuicioState extends State<PantallaJuicio>
   int _tiempoRestante = 0;
   Timer? _timer;
   final _rng = Random();
+  final _audioPlayer = AudioPlayer();
+  AppState? _appStateRef;
+  MusicService? _musicRef;
   // Cada caso incrementa _generacion. El addPostFrameCallback verifica que
   // sigue siendo el callback activo antes de arrancar animación y timer.
   int _generacion = 0;
@@ -41,16 +49,41 @@ class _PantallaJuicioState extends State<PantallaJuicio>
     super.initState();
     _animCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 400),
+      duration: const Duration(milliseconds: 550),
     );
     _escalaAnim = CurvedAnimation(parent: _animCtrl, curve: Curves.elasticOut);
+    _fadeAnim = CurvedAnimation(
+      parent: _animCtrl,
+      curve: const Interval(0.0, 0.45, curve: Curves.easeOut),
+    );
+    _pulseCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 550),
+    );
+    _pulseAnim = Tween<double>(begin: 1.0, end: 1.14).animate(
+      CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut),
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      final s = context.read<AppState>();
+      if (!mounted) return;
+      _appStateRef = context.read<AppState>();
+      _musicRef = context.read<MusicService>();
+      _appStateRef!.addListener(_onMusicaToggle);
+      if (_appStateRef!.musicaActiva) _musicRef!.play();
+      final s = _appStateRef!;
       if (!s.tutorialVisto) {
         await _mostrarTutorial();
       }
       if (mounted) _generarCaso();
     });
+  }
+
+  void _onMusicaToggle() {
+    if (!mounted) return;
+    if (_appStateRef?.musicaActiva == true) {
+      _musicRef?.play();
+    } else {
+      _musicRef?.pause();
+    }
   }
 
   Future<void> _mostrarTutorial() async {
@@ -67,6 +100,8 @@ class _PantallaJuicioState extends State<PantallaJuicio>
     if (!mounted) return;
     _timer?.cancel();
     _timer = null;
+    _pulseCtrl.stop();
+    _pulseCtrl.value = 0;
     final gen = ++_generacion;
 
     final s = context.read<AppState>();
@@ -143,9 +178,16 @@ class _PantallaJuicioState extends State<PantallaJuicio>
       if (_tiempoRestante <= 1) {
         t.cancel();
         _timer = null;
+        _pulseCtrl.stop();
         if (!_mostrandoSentencia && !_absuelto) _revelarSentencia();
       } else {
         setState(() => _tiempoRestante--);
+        if (_tiempoRestante <= 5 && !_pulseCtrl.isAnimating) {
+          _pulseCtrl.repeat(reverse: true);
+        } else if (_tiempoRestante > 5 && _pulseCtrl.isAnimating) {
+          _pulseCtrl.stop();
+          _pulseCtrl.value = 0;
+        }
       }
     });
   }
@@ -154,6 +196,8 @@ class _PantallaJuicioState extends State<PantallaJuicio>
     if (!mounted || _mostrandoSentencia || _absuelto) return;
     _timer?.cancel();
     _timer = null;
+    _pulseCtrl.stop();
+    _audioPlayer.play(AssetSource('sounds/gavel.mp3'));
     setState(() { _mostrandoSentencia = true; });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) { _animCtrl.stop(); _animCtrl.forward(from: 0); }
@@ -164,6 +208,8 @@ class _PantallaJuicioState extends State<PantallaJuicio>
     if (!mounted || _absuelto || _mostrandoSentencia) return;
     _timer?.cancel();
     _timer = null;
+    _pulseCtrl.stop();
+    _audioPlayer.play(AssetSource('sounds/gavel.mp3'));
     setState(() { _absuelto = true; });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) { _animCtrl.stop(); _animCtrl.forward(from: 0); }
@@ -172,8 +218,12 @@ class _PantallaJuicioState extends State<PantallaJuicio>
 
   @override
   void dispose() {
+    _appStateRef?.removeListener(_onMusicaToggle);
+    _musicRef?.pause();
     _timer?.cancel();
     _animCtrl.dispose();
+    _pulseCtrl.dispose();
+    _audioPlayer.dispose();
     super.dispose();
   }
 
@@ -256,7 +306,26 @@ class _PantallaJuicioState extends State<PantallaJuicio>
                 const SizedBox(height: 24),
                 Expanded(child: _buildCard(th)),
                 const SizedBox(height: 24),
-                _buildBotones(s, th),
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 320),
+                  transitionBuilder: (child, animation) => FadeTransition(
+                    opacity: CurvedAnimation(
+                      parent: animation,
+                      curve: Curves.easeOut,
+                    ),
+                    child: child,
+                  ),
+                  child: KeyedSubtree(
+                    key: ValueKey(
+                      _sinDatos
+                          ? 'sin_datos'
+                          : (!_mostrandoSentencia && !_absuelto
+                              ? 'juzgando'
+                              : 'siguiente'),
+                    ),
+                    child: _buildBotones(s, th),
+                  ),
+                ),
                 const SizedBox(height: 24),
               ],
             ),
@@ -324,35 +393,60 @@ class _PantallaJuicioState extends State<PantallaJuicio>
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 300),
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-              decoration: BoxDecoration(
-                color: timerBg,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: timerBorder),
+            AnimatedBuilder(
+              animation: _pulseAnim,
+              builder: (context, child) => Transform.scale(
+                scale: isUrgent ? _pulseAnim.value : 1.0,
+                child: child,
               ),
-              child: Row(
-                children: [
-                  Icon(
-                    _absuelto
-                        ? Icons.check_circle_outline_rounded
-                        : Icons.timer_outlined,
-                    color: timerColor,
-                    size: 16,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    timerLabel,
-                    style: TextStyle(
-                      fontFamily: 'Oswald',
-                      color: timerColor,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 15,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 300),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                decoration: BoxDecoration(
+                  color: timerBg,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: timerBorder),
+                ),
+                child: Row(
+                  children: [
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 200),
+                      child: Icon(
+                        _absuelto
+                            ? Icons.check_circle_outline_rounded
+                            : Icons.timer_outlined,
+                        key: ValueKey(_absuelto),
+                        color: timerColor,
+                        size: 16,
+                      ),
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 6),
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 180),
+                      transitionBuilder: (child, anim) => FadeTransition(
+                        opacity: anim,
+                        child: SlideTransition(
+                          position: Tween<Offset>(
+                            begin: const Offset(0, -0.5),
+                            end: Offset.zero,
+                          ).animate(anim),
+                          child: child,
+                        ),
+                      ),
+                      child: Text(
+                        timerLabel,
+                        key: ValueKey(timerLabel),
+                        style: TextStyle(
+                          fontFamily: 'Oswald',
+                          color: timerColor,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 15,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
@@ -394,34 +488,57 @@ class _PantallaJuicioState extends State<PantallaJuicio>
       );
     }
 
-    return ScaleTransition(
-      scale: _escalaAnim,
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(28),
-        decoration: BoxDecoration(
-          color: th.superficie,
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: th.borde, width: 1.5),
-          boxShadow: [
-            BoxShadow(
-              color: th.accent.withValues(alpha: 0.08),
-              blurRadius: 32,
-              offset: const Offset(0, 8),
+    return FadeTransition(
+      opacity: _fadeAnim,
+      child: ScaleTransition(
+        scale: _escalaAnim,
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(28),
+          decoration: BoxDecoration(
+            color: th.superficie,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: th.borde, width: 1.5),
+            boxShadow: [
+              BoxShadow(
+                color: th.accent.withValues(alpha: 0.08),
+                blurRadius: 32,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 380),
+            transitionBuilder: (child, animation) => FadeTransition(
+              opacity: CurvedAnimation(
+                parent: animation,
+                curve: Curves.easeOut,
+              ),
+              child: SlideTransition(
+                position: Tween<Offset>(
+                  begin: const Offset(0, 0.07),
+                  end: Offset.zero,
+                ).animate(CurvedAnimation(
+                  parent: animation,
+                  curve: Curves.easeOutCubic,
+                )),
+                child: child,
+              ),
             ),
-          ],
+            child: _absuelto
+                ? _buildAbsueltoContent(th, const ValueKey('absuelto'))
+                : _mostrandoSentencia
+                    ? _buildSentenciaContent(th, const ValueKey('sentencia'))
+                    : _buildCargoContent(th, const ValueKey('cargo')),
+          ),
         ),
-        child: _absuelto
-            ? _buildAbsueltoContent(th)
-            : _mostrandoSentencia
-                ? _buildSentenciaContent(th)
-                : _buildCargoContent(th),
       ),
     );
   }
 
-  Widget _buildCargoContent(AppThemeData th) {
+  Widget _buildCargoContent(AppThemeData th, [Key? key]) {
     return Column(
+      key: key,
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         Container(
@@ -592,9 +709,10 @@ class _PantallaJuicioState extends State<PantallaJuicio>
     );
   }
 
-  Widget _buildAbsueltoContent(AppThemeData th) {
+  Widget _buildAbsueltoContent(AppThemeData th, [Key? key]) {
     const verde = Color(0xFF4ADE80);
     return Column(
+      key: key,
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         const Text('🎉', style: TextStyle(fontSize: 48)),
@@ -649,8 +767,9 @@ class _PantallaJuicioState extends State<PantallaJuicio>
     );
   }
 
-  Widget _buildSentenciaContent(AppThemeData th) {
+  Widget _buildSentenciaContent(AppThemeData th, [Key? key]) {
     return Column(
+      key: key,
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         Container(
