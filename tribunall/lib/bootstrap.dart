@@ -55,6 +55,11 @@ Future<void> bootstrapApp() async {
 
   if (MonetizationConfig.adsEnabled) {
     await MobileAds.instance.initialize();
+    // Uncomment and replace with your device ID to test ads on a real device.
+    // Get your ID from logcat: "Use RequestConfiguration.Builder().setTestDeviceIds"
+    // MobileAds.instance.updateRequestConfiguration(
+    //   RequestConfiguration(testDeviceIds: ['YOUR_TEST_DEVICE_ID']),
+    // );
   }
 
   try {

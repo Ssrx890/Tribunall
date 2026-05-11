@@ -221,6 +221,10 @@ class AppState extends ChangeNotifier {
       bannerAd?.dispose();
       bannerAd = null;
       bannerCargado = false;
+      _interstitialAd?.dispose();
+      _interstitialAd = null;
+      _rewardedAd?.dispose();
+      _rewardedAd = null;
     } else if (anunciosActivos && bannerAd == null) {
       _cargarBanner();
     }
@@ -228,7 +232,7 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> comprarPicante() async {
-    if (!compraPicanteDisponible || !_iapDisponible) return;
+    if (!compraPicanteDisponible || !_iapDisponible || _cargandoPago) return;
 
     _cargandoPago = true;
     notifyListeners();
@@ -366,7 +370,7 @@ class AppState extends ChangeNotifier {
         ),
       );
       final loaded = await completer.future.timeout(
-        const Duration(seconds: 10),
+        const Duration(seconds: 20),
         onTimeout: () {
           timedOut = true;
           return false;

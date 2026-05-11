@@ -8,7 +8,7 @@
 PRODUCT_NAME = tribunall
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = com.example.tribunall
+PRODUCT_BUNDLE_IDENTIFIER = com.sunlies.tribunall
 
 // The copyright displayed in application information
 PRODUCT_COPYRIGHT = Copyright © 2026 com.example. All rights reserved.

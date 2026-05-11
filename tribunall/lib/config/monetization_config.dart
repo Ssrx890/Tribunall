@@ -10,7 +10,7 @@ class MonetizationConfig {
   static bool get adsEnabled =>
       !kIsWeb && kReleaseMode && (Platform.isAndroid || Platform.isIOS);
 
-  static const bool iapEnabled = false;
+  static const bool iapEnabled = true;
 
   static bool get hasPicanteProduct =>
       iapEnabled && productPicanteId.trim().isNotEmpty;
